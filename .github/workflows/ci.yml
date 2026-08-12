@@ -1,0 +1,40 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go build ./...
+      - run: go test -race -timeout 120s ./...
+      - run: go vet ./...
+      - name: WASM compile check (relay is server-side; coder/websocket's accept path is !js)
+        run: GOOS=js GOARCH=wasm go build ./wire/... ./crypto/... ./phrase/... ./session/...
+
+  complexity:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: richardwooding/codemetrics@v0.12.3
+        with:
+          max-cognitive: "15"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
