@@ -82,7 +82,7 @@ func (c *Client) sendPake1() (*crypto.Joiner, error) {
 	if err != nil {
 		return nil, err
 	}
-	payload, err := wire.EncodePayload(wire.KindPake1, wire.Pake{Data: j.Flight1, Spectate: c.spectate})
+	payload, err := wire.EncodePayload(wire.KindPake1, wire.Pake{Data: j.Flight1, Spectate: c.observer})
 	if err != nil {
 		return nil, err
 	}
@@ -209,8 +209,24 @@ func (c *Client) handleHandshakeDirect(from wire.ParticipantID, kind wire.Payloa
 		return
 	}
 
+	// Snapshot the assigned roles for the policy. c.joiners is only ever
+	// mutated on this (the read) goroutine — the store below and the
+	// ParticipantLeft delete in dispatchFrame — so nothing can change between
+	// this snapshot and the store. That confinement is load-bearing: it is
+	// what lets the policy (application code) run OUTSIDE c.mu.
 	c.mu.Lock()
-	role := c.assignJoinerRole(p.Spectate)
+	assigned := make(map[wire.ParticipantID]Role, len(c.joiners))
+	for id, r := range c.joiners {
+		assigned[id] = r
+	}
+	c.mu.Unlock()
+
+	role := c.rolePolicy(from, p.Spectate, assigned)
+	if role == RoleNone || role == RoleHost {
+		role = RoleMember // reserved values; see RolePolicy
+	}
+
+	c.mu.Lock()
 	c.joiners[from] = role
 	c.pairwise[from] = pairwise // retained so we can re-wrap a fresh key on a later leave
 	key := c.groupKey
@@ -303,22 +319,6 @@ func (c *Client) handleRekeyPake2(from wire.ParticipantID, praw []byte) {
 	c.haveHostPairwise = true
 	c.rekeyJoiner = nil
 	c.mu.Unlock()
-}
-
-// assignJoinerRole picks the role for a newly keyed joiner. The caller must
-// hold c.mu: it reads c.joiners without re-locking. A joiner that asked to
-// watch is always a spectator, so it never takes the open player seat.
-// Otherwise the first non-watcher to key becomes the player.
-func (c *Client) assignJoinerRole(spectate bool) Role {
-	if spectate {
-		return RoleSpectator
-	}
-	for _, r := range c.joiners {
-		if r == RolePlayer {
-			return RoleSpectator
-		}
-	}
-	return RolePlayer
 }
 
 // readLoop pumps relay frames into events until the connection dies. It reads

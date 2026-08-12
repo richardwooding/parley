@@ -44,14 +44,14 @@ func TestRekeyOnLeaveLocksOutDepartedMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = host.Close() })
-	player, err := Join(ctx, url, phrase, false)
+	player, err := Join(ctx, url, phrase)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = player.Close() })
 	// The host keys each joiner on its read loop; wait until both are seated.
 	waitEvent[MemberKeyed](t, host)
-	spectator, err := Join(ctx, url, phrase, true)
+	spectator, err := Join(ctx, url, phrase, WithObserver())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,13 +121,13 @@ func TestHostDepartureRekeyLocksOutOldHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	player, err := Join(ctx, url, phrase, false)
+	player, err := Join(ctx, url, phrase)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = player.Close() })
 	waitEvent[MemberKeyed](t, host)
-	spectator, err := Join(ctx, url, phrase, true)
+	spectator, err := Join(ctx, url, phrase, WithObserver())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,8 +175,8 @@ func TestHostDepartureRekeyLocksOutOldHost(t *testing.T) {
 	}
 
 	// The survivor keeps its role across the re-key (migration rekey wraps RoleNone).
-	if spectator.Role() != RoleSpectator {
-		t.Fatalf("spectator role not preserved across migration rekey: got %v", spectator.Role())
+	if spectator.Role() != RoleObserver {
+		t.Fatalf("observer role not preserved across migration rekey: got %v", spectator.Role())
 	}
 }
 

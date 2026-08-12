@@ -38,7 +38,7 @@ http.Handle("/ws", srv)
 client, phrase, err := session.Host(ctx, "wss://example.com/ws")
 
 // Joiner: pair with the phrase.
-client, err := session.Join(ctx, "wss://example.com/ws", phrase, false)
+client, err := session.Join(ctx, "wss://example.com/ws", phrase)
 
 // Both ends: encrypted app frames by service ID.
 client.Broadcast("chat", body)
@@ -65,8 +65,11 @@ both derivations are pinned by golden tests.)
   the relay is server-side only.
 - Reconnect = resume for network drops (relay holds the slot for a grace
   window); otherwise rejoin with the phrase.
-- Default seat policy: the first non-spectating joiner becomes the single
-  "player", later joiners are spectators; the role byte rides inside the
-  encrypted handshake. Pluggable role policies may come later.
+- Roles are pluggable: the host's `RolePolicy` (see `WithRolePolicy`)
+  assigns each keyed joiner a role byte that rides inside the encrypted
+  handshake — values 2..255 are the application's vocabulary. The default
+  policy seats `WithObserver` joiners as `RoleObserver` and everyone else
+  as `RoleMember`. Pass the policy to `Join` too: a joiner promoted by
+  host migration becomes the role assigner.
 
 MIT licensed.

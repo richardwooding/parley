@@ -19,14 +19,19 @@ import (
 )
 
 // Role is assigned by the host when it wraps the group key for a joiner.
-// The zero value means "not keyed yet".
+// The zero value means "not keyed yet". The byte value rides inside the
+// encrypted handshake, so it is application protocol: every end and every
+// version of an application must agree on the numbering. RoleNone and
+// RoleHost are reserved by the library; values 2..255 belong to the
+// application's RolePolicy (RoleMember and RoleObserver are the built-in
+// default vocabulary).
 type Role uint8
 
 const (
-	RoleNone      Role = 0
-	RoleHost      Role = 1
-	RolePlayer    Role = 2
-	RoleSpectator Role = 3
+	RoleNone     Role = 0 // not keyed yet; in a rekey wrap: "keep your existing role"
+	RoleHost     Role = 1 // reserved: the key authority
+	RoleMember   Role = 2 // default policy: an ordinary joiner
+	RoleObserver Role = 3 // default policy: a joiner that asked to observe
 )
 
 // Event is anything the session surfaces to the layer above (a service mux
@@ -65,7 +70,11 @@ type Client struct {
 	role     Role
 
 	resumeToken []byte // opaque relay-issued secret to reclaim this slot after a drop
-	spectate    bool   // joiner intent: ask the host to seat us as a spectator
+	observer    bool   // joiner intent, sent as wire.Pake.Spectate (the field name is deployed wire vocabulary)
+
+	// rolePolicy assigns roles to joiners when this end is — or is promoted
+	// to be — the session host. Immutable after dial.
+	rolePolicy RolePolicy
 
 	groupKey crypto.Key
 	keyed    bool
@@ -114,7 +123,30 @@ const (
 const DefaultProtocol = "parley/v1"
 
 type config struct {
-	protocol string
+	protocol   string
+	rolePolicy RolePolicy
+	observer   bool
+}
+
+// RolePolicy decides the role for a newly keyed joiner. The host calls it
+// once per completed handshake, on the session's read goroutine, with the
+// joiner's participant ID, whether the joiner asked to observe (see
+// WithObserver), and a snapshot of the roles this host has already assigned
+// to its joiners (the host itself is not in the map). Implementations must
+// be fast, must not block, and must not call back into the Client — a
+// stalled policy stalls the whole session end. RoleNone and RoleHost are
+// reserved: a policy returning either is clamped to RoleMember. Any other
+// value (2..255) is delivered verbatim, so applications may define their
+// own role vocabulary on top of Role.
+type RolePolicy func(joiner wire.ParticipantID, observer bool, assigned map[wire.ParticipantID]Role) Role
+
+// DefaultRolePolicy seats observers as RoleObserver and everyone else as
+// RoleMember.
+func DefaultRolePolicy(_ wire.ParticipantID, observer bool, _ map[wire.ParticipantID]Role) Role {
+	if observer {
+		return RoleObserver
+	}
+	return RoleMember
 }
 
 // Option configures Host and Join.
@@ -128,8 +160,23 @@ func WithProtocol(label string) Option {
 	return func(c *config) { c.protocol = label }
 }
 
+// WithRolePolicy installs the policy used to assign roles to joiners when
+// this end is the session host. Pass it to Join as well as Host: after a
+// host migration the promoted joiner becomes the role assigner.
+func WithRolePolicy(p RolePolicy) Option {
+	return func(c *config) { c.rolePolicy = p }
+}
+
+// WithObserver marks a Join as an observer: the joiner asks the host to
+// seat it with an observer role rather than a member seat. The intent rides
+// the first handshake flight; the host's RolePolicy decides what to do with
+// it. No effect on Host.
+func WithObserver() Option {
+	return func(c *config) { c.observer = true }
+}
+
 func buildConfig(opts []Option) config {
-	cfg := config{protocol: DefaultProtocol}
+	cfg := config{protocol: DefaultProtocol, rolePolicy: DefaultRolePolicy}
 	for _, o := range opts {
 		o(&cfg)
 	}
@@ -137,8 +184,9 @@ func buildConfig(opts []Option) config {
 }
 
 // Host creates a new session on the relay and returns a keyed client plus
-// the freshly generated code phrase. The first joiner becomes the player;
-// later joiners are spectators.
+// the freshly generated code phrase. Joiner roles are assigned by the
+// configured RolePolicy (see WithRolePolicy); the default seats observers
+// as RoleObserver and everyone else as RoleMember.
 func Host(ctx context.Context, relayURL string, opts ...Option) (*Client, string, error) {
 	p := phrase.New()
 	c, err := dial(ctx, relayURL, p, buildConfig(opts))
@@ -156,14 +204,15 @@ func Host(ctx context.Context, relayURL string, opts ...Option) (*Client, string
 
 // Join connects to an existing session with its phrase. It returns once the
 // handshake completes and the client is keyed; a wrong phrase surfaces as
-// crypto.ErrUnwrap. When spectate is true the joiner asks to be seated as a
-// spectator regardless of join order (it never takes the open player seat).
-func Join(ctx context.Context, relayURL, phraseText string, spectate bool, opts ...Option) (*Client, error) {
-	c, err := dial(ctx, relayURL, phraseText, buildConfig(opts))
+// crypto.ErrUnwrap. A joiner that wants to watch rather than participate
+// passes WithObserver.
+func Join(ctx context.Context, relayURL, phraseText string, opts ...Option) (*Client, error) {
+	cfg := buildConfig(opts)
+	c, err := dial(ctx, relayURL, phraseText, cfg)
 	if err != nil {
 		return nil, err
 	}
-	c.spectate = spectate
+	c.observer = cfg.observer
 	if err := c.joinHello(ctx); err != nil {
 		_ = c.conn.CloseNow()
 		return nil, err
@@ -255,15 +304,16 @@ func dial(ctx context.Context, relayURL, phraseText string, cfg config) (*Client
 	conn.SetReadLimit(wire.MaxFrame + 16)
 	canonical := phrase.Canonical(phraseText)
 	return &Client{
-		conn:     conn,
-		relayURL: relayURL,
-		proto:    cfg.protocol,
-		sid:      phrase.SessionID(cfg.protocol, canonical),
-		phraseC:  canonical,
-		events:   make(chan Event, eventBuffer),
-		seqs:     map[string]uint64{},
-		joiners:  map[wire.ParticipantID]Role{},
-		pairwise: map[wire.ParticipantID]crypto.Key{},
+		conn:       conn,
+		relayURL:   relayURL,
+		proto:      cfg.protocol,
+		rolePolicy: cfg.rolePolicy,
+		sid:        phrase.SessionID(cfg.protocol, canonical),
+		phraseC:    canonical,
+		events:     make(chan Event, eventBuffer),
+		seqs:       map[string]uint64{},
+		joiners:    map[wire.ParticipantID]Role{},
+		pairwise:   map[wire.ParticipantID]crypto.Key{},
 	}, nil
 }
 

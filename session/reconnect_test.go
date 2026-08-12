@@ -51,7 +51,7 @@ func TestReconnectPreservesIdentityKeyAndSeq(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = host.Close() }()
-	joiner, err := Join(ctx, url, phrase, false)
+	joiner, err := Join(ctx, url, phrase)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestHostReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = host.Close() }()
-	joiner, err := Join(ctx, url, phrase, false)
+	joiner, err := Join(ctx, url, phrase)
 	if err != nil {
 		t.Fatal(err)
 	}
