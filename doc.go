@@ -22,6 +22,10 @@
 //   - session: the client engine — dial, handshake, events, rekey,
 //     reconnect/resume, host migration (compiles to WASM)
 //   - relay:   the server — a blind frame forwarder, one http.Handler
+//   - service: the layered-service mux — routes decrypted envelopes to
+//     application services, host-authoritative roster/names, snapshot
+//     transfer for late joiners, host-migration election (compiles to WASM)
+//   - service/chat: a ready-made text-chat service with late-join history
 //
 // Every end of a session must agree on an application protocol label (see
 // session.WithProtocol): it domain-separates session IDs and the key

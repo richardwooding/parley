@@ -59,6 +59,16 @@ protocol version bump**: ends with different labels derive different session
 IDs and keys and cannot talk. (kibitz's deployed label is `"kibitz/v1"`;
 both derivations are pinned by golden tests.)
 
+## Services
+
+The `service` package multiplexes application services over one session:
+implement `service.Service` (ID/HandleFrame/Snapshot/Restore), register with
+`service.NewMux(client, service.WithServices(...))`, and get a
+host-authoritative roster with display names, snapshot catch-up for late
+joiners, per-sender sequence tracking, and host-migration election
+(`WithSuccessor` for custom policies). `service/chat` is a ready-made text
+chat with deduped late-join history.
+
 ## Notes
 
 - `session` (and `wire`/`crypto`/`phrase`) compile to `GOOS=js GOARCH=wasm`;
