@@ -69,6 +69,11 @@ joiners, per-sender sequence tracking, and host-migration election
 (`WithSuccessor` for custom policies). `service/chat` is a ready-made text
 chat with deduped late-join history.
 
+The optional `dashboard` package adds a GitHub-OAuth-gated admin page over the
+relay's blind `Stats()` snapshot: `dashboard.New(cfg, relaySrv).Register(mux)`,
+gated on your own env/secrets, branded via `Config.AppName`. It reads only the
+relay's aggregate counters — never session contents.
+
 ## Notes
 
 - `session` (and `wire`/`crypto`/`phrase`) compile to `GOOS=js GOARCH=wasm`;

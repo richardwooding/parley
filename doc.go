@@ -26,6 +26,8 @@
 //     application services, host-authoritative roster/names, snapshot
 //     transfer for late joiners, host-migration election (compiles to WASM)
 //   - service/chat: a ready-made text-chat service with late-join history
+//   - dashboard: an optional GitHub-OAuth-gated admin dashboard over the
+//     relay's blind Stats() snapshot (server-only)
 //
 // Every end of a session must agree on an application protocol label (see
 // session.WithProtocol): it domain-separates session IDs and the key
