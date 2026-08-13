@@ -137,3 +137,34 @@ func (s *Server) Stats() Stats {
 	}
 	return st
 }
+
+// MergeStats combines per-node snapshots into one cluster-wide Stats for a
+// multi-node deployment (session-affinity sharding — see Options.Router).
+// Because each session lives on exactly one node, the Sessions lists are
+// disjoint and concatenate into the true global list; counters sum; TrackedIPs
+// and ActiveSessions sum; Uptime is the longest-running node's; configuration
+// fields (caps, timeouts) are taken from the first snapshot, which every node
+// shares. Returns the zero Stats for no input, and the input unchanged for one.
+func MergeStats(parts ...Stats) Stats {
+	if len(parts) == 0 {
+		return Stats{}
+	}
+	out := parts[0]
+	out.Sessions = nil
+	out.Sessions = append(out.Sessions, parts[0].Sessions...)
+	for _, p := range parts[1:] {
+		out.ActiveSessions += p.ActiveSessions
+		out.TrackedIPs += p.TrackedIPs
+		out.SessionsCreated += p.SessionsCreated
+		out.FramesForwarded += p.FramesForwarded
+		out.BytesForwarded += p.BytesForwarded
+		out.Joins += p.Joins
+		out.Resumes += p.Resumes
+		out.Errors += p.Errors
+		if p.Uptime > out.Uptime {
+			out.Uptime = p.Uptime
+		}
+		out.Sessions = append(out.Sessions, p.Sessions...)
+	}
+	return out
+}

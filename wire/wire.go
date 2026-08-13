@@ -7,6 +7,7 @@
 package wire
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -60,6 +61,29 @@ type ParticipantID uint32
 // SHA-256(protocol ∥ "/session-id" ∥ NUL ∥ phrase)[:16]. The relay never sees the
 // phrase itself.
 type SessionID [16]byte
+
+// SessionParam is the query-string key that carries a SessionID's hex as a
+// pre-upgrade routing hint (see relay.Options.Router). It is advisory: the
+// authoritative SessionID is always the one inside the hello frame.
+const SessionParam = "s"
+
+// Hex is the lowercase-hex encoding of the SessionID. It leaks nothing the
+// relay does not already learn from the hello frame; the phrase is never
+// encoded.
+func (s SessionID) Hex() string { return hex.EncodeToString(s[:]) }
+
+// ParseSessionID decodes a lowercase-hex SessionID. It rejects any string
+// that is not exactly 2*len(SessionID) hex characters.
+func ParseSessionID(h string) (SessionID, error) {
+	var id SessionID
+	if len(h) != 2*len(id) {
+		return id, fmt.Errorf("wire: session id must be %d hex chars", 2*len(id))
+	}
+	if _, err := hex.Decode(id[:], []byte(h)); err != nil {
+		return id, fmt.Errorf("wire: session id: %w", err)
+	}
+	return id, nil
+}
 
 type CreateSession struct {
 	SessionID       SessionID `cbor:"1,keyasint"`

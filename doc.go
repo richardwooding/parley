@@ -21,7 +21,9 @@
 //     wrap/unwrap, AEAD sealing with session/sender-bound associated data
 //   - session: the client engine — dial, handshake, events, rekey,
 //     reconnect/resume, host migration (compiles to WASM)
-//   - relay:   the server — a blind frame forwarder, one http.Handler
+//   - relay:   the server — a blind frame forwarder, one http.Handler.
+//     Options.Router enables session-affinity sharding across multiple nodes;
+//     MergeStats combines per-node snapshots.
 //   - service: the layered-service mux — routes decrypted envelopes to
 //     application services, host-authoritative roster/names, snapshot
 //     transfer for late joiners, host-migration election (compiles to WASM)

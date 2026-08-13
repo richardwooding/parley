@@ -26,6 +26,26 @@ type Options struct {
 	Grace           time.Duration // how long a dropped slot is held for reconnect/resume (default 30s)
 	ConnRate        rate.Limit    // per-IP connection attempts (default 5/min)
 	ConnBurst       int           // per-IP burst (default 5)
+	// Router, when non-nil, is consulted for every connection BEFORE the
+	// WebSocket upgrade (and before rate limiting), enabling session-affinity
+	// routing across multiple relay nodes. It receives the SessionID parsed
+	// from the wire.SessionParam query value and the raw request. Return the
+	// zero RouteResult to serve the connection here; return a Replay result to
+	// hand the request off without upgrading (e.g. a Fly-Replay header naming
+	// the owning node). Nil Router = single-node behavior: the query param is
+	// ignored and the relay behaves exactly as it does with no router.
+	Router func(sid wire.SessionID, r *http.Request) RouteResult
+}
+
+// RouteResult is a Router's decision. The zero value means "serve this
+// connection here" — the upgrade proceeds normally. Set Replay to hand the
+// request off WITHOUT upgrading: the relay copies Header onto the response and
+// writes Status (0 → 503), then returns. All platform specifics (e.g. a
+// Fly-Replay header) live in the Router; the relay only relays the directive.
+type RouteResult struct {
+	Replay bool
+	Header http.Header
+	Status int
 }
 
 func (o *Options) defaults() {
@@ -86,6 +106,30 @@ func New(opts Options) *Server {
 func (s *Server) Close() { close(s.stop) }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Session-affinity routing runs before rate limiting and the upgrade: a
+	// node that will only hand this connection off must not burn its own
+	// rate-limit budget, and fly-replay must decide from the HTTP request
+	// before Accept writes the 101.
+	if s.opts.Router != nil {
+		sid, ok := parseSessionParam(r)
+		if !ok {
+			http.Error(w, "missing or malformed session id", http.StatusBadRequest)
+			return
+		}
+		if res := s.opts.Router(sid, r); res.Replay {
+			for k, vs := range res.Header {
+				for _, v := range vs {
+					w.Header().Add(k, v)
+				}
+			}
+			status := res.Status
+			if status == 0 {
+				status = http.StatusServiceUnavailable
+			}
+			w.WriteHeader(status)
+			return
+		}
+	}
 	if !s.limiter.allow(r.RemoteAddr) {
 		http.Error(w, "rate limited", http.StatusTooManyRequests)
 		return
@@ -100,6 +144,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	conn.SetReadLimit(wire.MaxFrame + 16)
 	s.handle(r.Context(), conn)
+}
+
+// parseSessionParam extracts and validates the routing-hint SessionID from the
+// request's query string. Reports false for a missing or malformed value.
+func parseSessionParam(r *http.Request) (wire.SessionID, bool) {
+	h := r.URL.Query().Get(wire.SessionParam)
+	if h == "" {
+		return wire.SessionID{}, false
+	}
+	sid, err := wire.ParseSessionID(h)
+	if err != nil {
+		return wire.SessionID{}, false
+	}
+	return sid, true
 }
 
 // handle drives one connection: hello (create or join), the relay loop, then

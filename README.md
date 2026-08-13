@@ -69,6 +69,26 @@ joiners, per-sender sequence tracking, and host-migration election
 (`WithSuccessor` for custom policies). `service/chat` is a ready-made text
 chat with deduped late-join history.
 
+## Multi-node
+
+One relay node is authoritative for a session in memory — the state is live
+socket ownership, not serializable — so you scale by **session-affinity
+sharding**: run N nodes and route every connection for a SessionID to the same
+node. `Options.Router` is the only seam: it fires before the WebSocket upgrade
+with the SessionID (from a `?s=<hex>` query the client always sends) and the
+raw request, and returns either "serve here" (zero value) or a replay
+directive (headers + status). Nil Router = single-node, unchanged. The
+consistent-hashing + platform routing (e.g. Fly-Replay) lives in your app, not
+the library. For a clustered dashboard, `relay.MergeStats` plus
+`dashboard.NewAggregator`/`InternalStatsHandler` fan a stats poll out to peers
+and merge the shards.
+
+Access-log caveat: the hex SessionID rides in `?s=` and so appears in
+server/proxy access logs. It is not new information to the relay (it already
+learns the id from the hello frame) and is not secret, but it is correlatable
+across a session's requests — scrub `?s=` from logs if you consider the hash
+sensitive. The **phrase never appears in the URL** and never leaves the client.
+
 The optional `dashboard` package adds a GitHub-OAuth-gated admin page over the
 relay's blind `Stats()` snapshot: `dashboard.New(cfg, relaySrv).Register(mux)`,
 gated on your own env/secrets, branded via `Config.AppName`. It reads only the

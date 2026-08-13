@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
@@ -233,7 +234,11 @@ func Join(ctx context.Context, relayURL, phraseText string, opts ...Option) (*Cl
 // which is exactly the state after a Closed event — so no goroutine is touching
 // the client when Reconnect runs.
 func (c *Client) Reconnect(ctx context.Context) error {
-	conn, _, err := websocket.Dial(ctx, c.relayURL, nil)
+	dialURL, err := sessionURL(c.relayURL, c.sid)
+	if err != nil {
+		return err
+	}
+	conn, _, err := websocket.Dial(ctx, dialURL, nil)
 	if err != nil {
 		return fmt.Errorf("session: redial relay: %w", err)
 	}
@@ -296,19 +301,39 @@ func (c *Client) pingLoop(conn *websocket.Conn) {
 	}
 }
 
+// sessionURL appends the SessionID routing hint (wire.SessionParam) to a relay
+// URL, preserving its scheme, path, and any existing query. Multi-node relays
+// use the hint to route every connection for a session to one node; a
+// single-node relay ignores it.
+func sessionURL(relayURL string, sid wire.SessionID) (string, error) {
+	u, err := url.Parse(relayURL)
+	if err != nil {
+		return "", fmt.Errorf("session: parse relay url: %w", err)
+	}
+	q := u.Query()
+	q.Set(wire.SessionParam, sid.Hex())
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
 func dial(ctx context.Context, relayURL, phraseText string, cfg config) (*Client, error) {
-	conn, _, err := websocket.Dial(ctx, relayURL, nil)
+	canonical := phrase.Canonical(phraseText)
+	sid := phrase.SessionID(cfg.protocol, canonical)
+	dialURL, err := sessionURL(relayURL, sid)
+	if err != nil {
+		return nil, err
+	}
+	conn, _, err := websocket.Dial(ctx, dialURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("session: dial relay: %w", err)
 	}
 	conn.SetReadLimit(wire.MaxFrame + 16)
-	canonical := phrase.Canonical(phraseText)
 	return &Client{
 		conn:       conn,
-		relayURL:   relayURL,
+		relayURL:   relayURL, // param-free base; Reconnect re-derives the ?s= hint
 		proto:      cfg.protocol,
 		rolePolicy: cfg.rolePolicy,
-		sid:        phrase.SessionID(cfg.protocol, canonical),
+		sid:        sid,
 		phraseC:    canonical,
 		events:     make(chan Event, eventBuffer),
 		seqs:       map[string]uint64{},
