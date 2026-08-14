@@ -190,17 +190,38 @@ func buildConfig(opts []Option) config {
 // as RoleObserver and everyone else as RoleMember.
 func Host(ctx context.Context, relayURL string, opts ...Option) (*Client, string, error) {
 	p := phrase.New()
-	c, err := dial(ctx, relayURL, p, buildConfig(opts))
+	c, err := HostWithPhrase(ctx, relayURL, p, opts...)
 	if err != nil {
 		return nil, "", err
 	}
+	return c, p, nil
+}
+
+// HostWithPhrase is Host with a caller-supplied code phrase instead of a freshly
+// generated one, so a session can be (re)hosted under a KNOWN phrase — e.g.
+// reopening a persisted workspace after every client has left. The phrase is
+// canonicalized exactly like Join's, so the same SessionID is derived. Joiner
+// roles follow the configured RolePolicy, identical to Host.
+//
+// If a live session already exists for this phrase the relay refuses the create
+// with a wire.ErrCodeSessionExists error; callers that want "join if present,
+// else host" should try Join first and fall back to HostWithPhrase (and, on a
+// concurrent-create race surfacing ErrCodeSessionExists, retry Join).
+func HostWithPhrase(ctx context.Context, relayURL, phraseText string, opts ...Option) (*Client, error) {
+	if phrase.Canonical(phraseText) == "" {
+		return nil, errors.New("session: empty phrase")
+	}
+	c, err := dial(ctx, relayURL, phraseText, buildConfig(opts))
+	if err != nil {
+		return nil, err
+	}
 	if err := c.hostHello(ctx); err != nil {
 		_ = c.conn.CloseNow()
-		return nil, "", err
+		return nil, err
 	}
 	go c.readLoop(c.conn)
 	go c.pingLoop(c.conn)
-	return c, p, nil
+	return c, nil
 }
 
 // Join connects to an existing session with its phrase. It returns once the
