@@ -1,6 +1,7 @@
 package service
 
 import (
+	"sync"
 	"sync/atomic"
 
 	"github.com/richardwooding/parley/session"
@@ -40,6 +41,17 @@ type Mux struct {
 	// mux onto it. When unset (solo, bot, tests), run() closes events on exit
 	// as before, so `range mux.Events()` consumers terminate.
 	reconnectable atomic.Bool
+
+	// emit/shutdown coordination. emit runs on the run goroutine AND on caller
+	// goroutines (e.g. chat.Say), and Close races the run goroutine's final
+	// emits — so the events channel is closed exactly once, guarded here, and no
+	// emit ever sends after that. quit is closed once at shutdown to unblock a
+	// send parked on a full buffer; pending counts emits between the guard and
+	// their send so the last one out (or shutdown, if none are in flight) closes.
+	mu      sync.Mutex
+	closed  bool
+	pending int
+	quit    chan struct{}
 }
 
 type seqKey struct {
@@ -136,6 +148,7 @@ func NewMux(c Conn, opts ...Option) *Mux {
 		cmds:      make(chan func(), 8),
 		lastSeq:   map[seqKey]uint64{},
 		successor: DefaultSuccessorPolicy,
+		quit:      make(chan struct{}),
 	}
 	for _, o := range opts {
 		o(m)
@@ -159,9 +172,29 @@ func NewMux(c Conn, opts ...Option) *Mux {
 // teardown then goes through Close instead of the client closing the stream.
 func (m *Mux) SetReconnectable() { m.reconnectable.Store(true) }
 
-// Close finalizes a reconnectable mux, closing the merged event stream. No-op
-// semantics are the caller's responsibility (call exactly once).
-func (m *Mux) Close() { close(m.events) }
+// Close finalizes a reconnectable mux, closing the merged event stream. Safe
+// against a still-live run goroutine and concurrent emits (e.g. chat.Say): it
+// signals shutdown and lets the last in-flight emit close the channel, so it
+// never races a send. Idempotent.
+func (m *Mux) Close() { m.shutdown() }
+
+// shutdown signals teardown and closes the events channel exactly once, without
+// racing any emit. Called by Close (reconnectable teardown) and by run's defer
+// (non-reconnectable exit). Closing quit unblocks any emit parked on a full
+// buffer; if no emit is mid-send, shutdown closes events itself, otherwise the
+// last emit to finish does (see emit).
+func (m *Mux) shutdown() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return
+	}
+	m.closed = true
+	close(m.quit)
+	if m.pending == 0 {
+		close(m.events)
+	}
+}
 
 // Rebind re-points the mux at a freshly reconnected Conn (same participant id,
 // key, and services — see Client.Reconnect) and resumes routing. It re-derives
@@ -212,14 +245,38 @@ func (m *Mux) SetPushKey(key string) {
 // own event types (chat.Message, ctl Roster, …).
 func (m *Mux) Events() <-chan any { return m.events }
 
-func (m *Mux) emit(e any) { m.events <- e }
+// emit delivers an event to the merged stream. It runs on the run goroutine and
+// on caller goroutines (services like chat.Say emit directly), so it coordinates
+// with shutdown: it never sends once closed, never blocks past shutdown (select
+// on quit), and the last emit out closes events if shutdown is waiting on it.
+func (m *Mux) emit(e any) {
+	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return
+	}
+	m.pending++
+	m.mu.Unlock()
+
+	select {
+	case m.events <- e:
+	case <-m.quit: // shutting down: drop rather than block or send on a closed chan
+	}
+
+	m.mu.Lock()
+	m.pending--
+	if m.closed && m.pending == 0 {
+		close(m.events)
+	}
+	m.mu.Unlock()
+}
 
 func (m *Mux) run(requestSnap bool) {
 	// A reconnectable mux keeps its stream open across drops; the caller
-	// finalizes with Close. Otherwise close on exit so range-consumers stop.
+	// finalizes with Close. Otherwise shut down on exit so range-consumers stop.
 	defer func() {
 		if !m.reconnectable.Load() {
-			close(m.events)
+			m.shutdown()
 		}
 	}()
 
