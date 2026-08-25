@@ -13,7 +13,7 @@ func TestIPLimiterThrottlesPerIP(t *testing.T) {
 	now := time.Unix(0, 0)
 	l := newIPLimiter(rate.Every(12*time.Second), 5)
 	l.now = func() time.Time { return now }
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if !l.allow("1.2.3.4:1000") {
 			t.Fatalf("attempt %d within burst was denied", i)
 		}
@@ -36,14 +36,14 @@ func TestIPLimiterEvictionDoesNotForgiveActiveOffender(t *testing.T) {
 	l.now = func() time.Time { return now }
 
 	// Pre-fill the map to its cap with distinct IPs at t0.
-	for i := 0; i < ipLimiterCap; i++ {
+	for i := range ipLimiterCap {
 		l.allow(uniqueIP(i))
 	}
 
 	// A moment later, an active offender exhausts its burst — it is now the
 	// most-recently-seen entry, so LRU eviction can never pick it.
 	now = now.Add(time.Second)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		l.allow("6.6.6.6:80")
 	}
 	if l.allow("6.6.6.6:80") {

@@ -27,7 +27,7 @@ var wordsFile string
 // one word out of 1296 (negligible entropy).
 var words = func() []string {
 	out := make([]string, 0, 1296)
-	for _, w := range strings.Fields(wordsFile) {
+	for w := range strings.FieldsSeq(wordsFile) {
 		alpha := w != ""
 		for _, r := range w {
 			if r < 'a' || r > 'z' {

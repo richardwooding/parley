@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"unicode"
 
@@ -362,24 +363,18 @@ func (c *ctlService) sendSnapshot(to wire.ParticipantID) error {
 
 func (c *ctlService) rosterCopy() map[wire.ParticipantID]session.Role {
 	out := make(map[wire.ParticipantID]session.Role, len(c.roster))
-	for k, v := range c.roster {
-		out[k] = v
-	}
+	maps.Copy(out, c.roster)
 	return out
 }
 
 func (c *ctlService) namesCopy() map[wire.ParticipantID]string {
 	out := make(map[wire.ParticipantID]string, len(c.names))
-	for k, v := range c.names {
-		out[k] = v
-	}
+	maps.Copy(out, c.names)
 	return out
 }
 
 func (c *ctlService) endpointsCopy() map[wire.ParticipantID]string {
 	out := make(map[wire.ParticipantID]string, len(c.endpoints))
-	for k, v := range c.endpoints {
-		out[k] = v
-	}
+	maps.Copy(out, c.endpoints)
 	return out
 }

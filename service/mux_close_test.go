@@ -46,14 +46,12 @@ func TestMuxCloseRaceWithConcurrentEmits(t *testing.T) {
 	// Hammer emit from several goroutines — models chat.Say emitting off the run
 	// goroutine, concurrently with teardown.
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 500; j++ {
+	for range 8 {
+		wg.Go(func() {
+			for range 500 {
 				m.emit(Desync{})
 			}
-		}()
+		})
 	}
 
 	// Deliver a final session.Closed via the client's stream (as a real teardown

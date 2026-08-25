@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 
 	"github.com/coder/websocket"
 
@@ -216,9 +217,7 @@ func (c *Client) handleHandshakeDirect(from wire.ParticipantID, kind wire.Payloa
 	// what lets the policy (application code) run OUTSIDE c.mu.
 	c.mu.Lock()
 	assigned := make(map[wire.ParticipantID]Role, len(c.joiners))
-	for id, r := range c.joiners {
-		assigned[id] = r
-	}
+	maps.Copy(assigned, c.joiners)
 	c.mu.Unlock()
 
 	role := c.rolePolicy(from, p.Spectate, assigned)

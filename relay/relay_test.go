@@ -281,7 +281,7 @@ func TestConnRateLimit(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	url := "ws" + strings.TrimPrefix(srv.URL, "http")
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		conn, _, err := websocket.Dial(ctx, url, nil)
 		if err != nil {
 			t.Fatalf("dial %d within burst: %v", i, err)
