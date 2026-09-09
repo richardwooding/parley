@@ -6,7 +6,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/fxamacker/cbor/v2 v2.9.3
 	github.com/schollz/pake/v3 v3.2.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/time v0.15.0
 )
 
