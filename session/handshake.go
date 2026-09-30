@@ -423,5 +423,5 @@ func relayError(raw []byte) error {
 	if err != nil {
 		return errors.New("session: relay error")
 	}
-	return fmt.Errorf("session: relay error %d: %s", e.Code, e.Msg)
+	return &RelayError{Code: e.Code, Msg: e.Msg}
 }

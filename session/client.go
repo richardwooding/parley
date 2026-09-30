@@ -204,9 +204,9 @@ func Host(ctx context.Context, relayURL string, opts ...Option) (*Client, string
 // roles follow the configured RolePolicy, identical to Host.
 //
 // If a live session already exists for this phrase the relay refuses the create
-// with a wire.ErrCodeSessionExists error; callers that want "join if present,
+// with an error matching ErrSessionExists; callers that want "join if present,
 // else host" should try Join first and fall back to HostWithPhrase (and, on a
-// concurrent-create race surfacing ErrCodeSessionExists, retry Join).
+// concurrent-create race surfacing ErrSessionExists, retry Join).
 func HostWithPhrase(ctx context.Context, relayURL, phraseText string, opts ...Option) (*Client, error) {
 	if phrase.Canonical(phraseText) == "" {
 		return nil, errors.New("session: empty phrase")

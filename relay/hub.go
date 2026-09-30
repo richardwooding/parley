@@ -25,6 +25,11 @@ type hub struct {
 	// host is the current authority id used to route new joiners' handshake.
 	// It starts as the creator (id 1) and moves on host migration via ClaimHost.
 	host wire.ParticipantID
+	// evict collects participants whose buffer overflowed while a frame was
+	// being fanned out. They are torn down after the current command, never
+	// mid-broadcast: removal itself broadcasts ParticipantLeft, which could
+	// overflow someone else in turn.
+	evict []wire.ParticipantID
 }
 
 // client is the hub's view of one connected participant. out is drained by
@@ -46,6 +51,9 @@ type client struct {
 	// connection's leaveCmd carries an old gen and is ignored.
 	gen   uint64
 	timer *time.Timer // grace timer while held
+	// evicting marks a client queued for removal so the rest of the current
+	// fan-out skips it instead of queueing it twice.
+	evicting bool
 }
 
 // sendBuffer is the per-client fan-out buffer. A full buffer means a reader
@@ -165,7 +173,24 @@ func (h *hub) run(onEmpty func()) {
 			h.handleClose(cmd)
 			return
 		}
+		if h.drainEvictions() {
+			return
+		}
 	}
+}
+
+// drainEvictions removes every participant that overflowed during the last
+// command, telling the survivors each one left. It loops because those notices
+// can overflow a further participant. Returns true when the session emptied.
+func (h *hub) drainEvictions() bool {
+	for len(h.evict) > 0 {
+		id := h.evict[0]
+		h.evict = h.evict[1:]
+		if h.removeParticipant(id) {
+			return true
+		}
+	}
+	return false
 }
 
 // shutdown is run's deferred teardown: stop any grace timers, kick every
@@ -408,15 +433,20 @@ func (h *hub) broadcastFrame(t wire.MsgType, body any, except wire.ParticipantID
 // drop it rather than stall the session — a full buffer on a held slot means
 // the outage overran the buffer, so expire the slot (forfeit).
 func (h *hub) queue(c *client, frame []byte) {
+	if c.evicting {
+		return
+	}
 	select {
 	case c.out <- frame:
 	default:
-		if c.held {
-			h.removeParticipant(c.id)
-			return
+		// Either way the participant is gone, and its peers must hear so —
+		// a silent delete leaves them addressing a member that no longer
+		// exists and stops the host rotating the group key away from it.
+		c.evicting = true
+		if !c.held {
+			c.kick() // stop its writer now; the slot is torn down after this command
 		}
-		delete(h.clients, c.id)
-		c.kick()
+		h.evict = append(h.evict, c.id)
 	}
 }
 

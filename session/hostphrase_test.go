@@ -1,6 +1,9 @@
 package session
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 // HostWithPhrase creates a joinable session under a caller-chosen phrase — the
 // primitive that lets an app reopen a persisted workspace by its known phrase.
@@ -69,7 +72,21 @@ func TestHostWithPhraseAlreadyExists(t *testing.T) {
 	}
 	defer func() { _ = h1.Close() }()
 
-	if _, err := HostWithPhrase(ctx, url, p); err == nil {
-		t.Fatal("expected an error hosting an already-live phrase")
+	_, err = HostWithPhrase(ctx, url, p)
+	if !errors.Is(err, ErrSessionExists) {
+		t.Fatalf("hosting an already-live phrase: got %v, want ErrSessionExists", err)
+	}
+	if errors.Is(err, ErrSessionNotFound) {
+		t.Fatal("ErrSessionExists also matched ErrSessionNotFound")
+	}
+}
+
+// Joining a phrase nobody hosts is distinguishable too, so join-or-host can
+// branch on the error rather than on its text.
+func TestJoinMissingIsSessionNotFound(t *testing.T) {
+	url := reconnectRelay(t)
+	ctx := roleCtx(t)
+	if _, err := Join(ctx, url, "nobody-0-home"); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("got %v, want ErrSessionNotFound", err)
 	}
 }
