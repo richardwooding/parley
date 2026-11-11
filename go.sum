@@ -4,8 +4,8 @@ github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNU
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/fxamacker/cbor/v2 v2.9.4 h1:xwjVlxEMR3S605oUlgBjKLTTeGFciYPGYCtF/35LKGo=
 github.com/fxamacker/cbor/v2 v2.9.4/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
-github.com/schollz/pake/v3 v3.2.0 h1:WKHZVU8ulWRgXTMH6mpynz2cl2tBRo0G1McAcRslB04=
-github.com/schollz/pake/v3 v3.2.0/go.mod h1:prwHym0HhVlVdF5lpClcEhettdT7NDh6QopJtIm4xO4=
+github.com/schollz/pake/v3 v3.2.1 h1:xMkWN5+mTauJhh3SzUqfjiU54eAHn76Ww6h2cYHB7pU=
+github.com/schollz/pake/v3 v3.2.1/go.mod h1:prwHym0HhVlVdF5lpClcEhettdT7NDh6QopJtIm4xO4=
 github.com/tscholl2/siec v0.0.0-20240310163802-c2c6f6198406 h1:sDWDZkwYqX0jvLWstKzFwh+pYhQNaVg65BgSkCP/f7U=
 github.com/tscholl2/siec v0.0.0-20240310163802-c2c6f6198406/go.mod h1:KL9+ubr1JZdaKjgAaHr+tCytEncXBa1pR6FjbTsOJnw=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
